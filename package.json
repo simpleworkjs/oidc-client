@@ -41,5 +41,8 @@
     "@simpleworkjs/conf": "^1.2.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
