@@ -54,6 +54,14 @@ Returns `{ Token, AuthToken, OidcState, Auth, router, oidc, safeInternalPath, bo
 
 `oidc.randomToken(bytes=32)`, `oidc.codeChallengeS256(verifier)`, `oidc.createAuthRequest()`, `oidc.buildAuthUrl(state, codeChallenge, redirectUri?)`, `oidc.exchangeCode(code, codeVerifier, redirectUri?)`, `oidc.fetchUserInfo(accessToken)`, `oidc.claimsToIdentity(claims)` — all read `conf.oidc` via `@simpleworkjs/conf`.
 
+Discovery and ID-token verification:
+
+- `oidc.discover({force?})` — fetch and cache the provider's discovery document. Called automatically at startup when `conf.oidc.issuer` is set, and lazily by anything that needs an endpoint.
+- `oidc.endpoints()` — the endpoints in force: explicitly configured values first, discovered ones second. Synchronous.
+- `oidc.verifyIdToken(idToken, {audience?, issuer?, clockToleranceSec?})` — verify signature against the provider's JWKS, then `iss`, `aud`, `exp`, `nbf`. Throws on anything it cannot positively verify.
+- `oidc.verifyIdTokenIfPossible(idToken)` — the same, but returns `null` (with a one-time warning) when the provider publishes no JWKS. This is what the callback route uses.
+- `oidc.canVerifyIdTokens()` — whether a JWKS is known.
+
 `safeInternalPath(path)` — constrain a post-login redirect to a same-origin `/path`.
 
 ### `bootstrapLocalAdmin(User, { defaultName })`
@@ -62,7 +70,31 @@ Idempotently ensures `conf.auth.adminUsers[0]` (fallback `defaultName`) exists a
 
 ## Configuration
 
-All OIDC endpoints + client config come from `conf.oidc` (deep-merged by `@simpleworkjs/conf`): `enabled`, `clientId`, `clientSecret`, `redirectUri`, `authorizationEndpoint`, `tokenEndpoint`, `userinfoEndpoint`, `scopes`, `usernameClaim`, `groupsClaim`. The anti-lockout admin reads `conf.auth.adminUsers` / `conf.auth.localAdminPass`.
+Client config comes from `conf.oidc` (deep-merged by `@simpleworkjs/conf`): `enabled`, `clientId`, `clientSecret`, `redirectUri`, `scopes`, `usernameClaim`, `groupsClaim`. The anti-lockout admin reads `conf.auth.adminUsers` / `conf.auth.localAdminPass`.
+
+### Endpoints: set `issuer`, or set them individually
+
+```js
+oidc: {
+  issuer: 'https://sso.example.com',   // everything else is discovered
+  clientId: '…',
+  clientSecret: '…',                   // from secrets.js
+  redirectUri: 'https://app.example.com/api/auth/oidc/callback',
+}
+```
+
+With `issuer` set, `authorizationEndpoint`, `tokenEndpoint`, `userinfoEndpoint`,
+`jwksUri`, `revocationEndpoint` and `endSessionEndpoint` are read from the
+provider's `/.well-known/openid-configuration`. Any of them may still be set
+explicitly, and an explicit value always wins — so an existing deployment that
+lists its endpoints by hand keeps working exactly as before.
+
+**Setting `issuer` is also what turns on ID-token verification.** Without a
+`jwksUri` there is nothing to verify against, so identity comes from the userinfo
+endpoint alone (the behaviour this client has always had) and a one-time warning
+is logged. With one, the callback verifies the ID token's signature, issuer,
+audience and expiry, and checks that its subject matches the one userinfo
+reports.
 
 ## License
 
