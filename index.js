@@ -24,6 +24,7 @@
  * `routes/host_auth.js` (which consumes the exported pure `oidc` utils).
  */
 
+const conf = require('@simpleworkjs/conf');
 const oidc = require('./lib/oidc');
 const { safeInternalPath } = require('./lib/safe_redirect');
 const { bootstrapLocalAdmin } = require('./lib/bootstrap');
@@ -49,6 +50,17 @@ function createOidcClient({ Table, checkApiToken } = {}) {
 	const User = Table.models && Table.models.User;
 	if (!User) {
 		throw new Error('createOidcClient: User must be registered on Table.models before calling');
+	}
+
+	// Start discovery now if an issuer is configured, so the first login does not
+	// pay for it and a misconfigured issuer is a startup warning rather than a
+	// failed login. Non-blocking and non-fatal: every path that needs an endpoint
+	// retries discovery lazily, so this is a warm-up, not a prerequisite.
+	if(conf.oidc && conf.oidc.issuer){
+		oidc.discover().catch((error) => {
+			console.warn(`[oidc-client] OIDC discovery for "${conf.oidc.issuer}" failed at startup: `
+				+ `${error.message} (it will be retried on first use)`);
+		});
 	}
 
 	const { Token, AuthToken } = require('./lib/token')(Table);

@@ -4,6 +4,44 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-09-13
+
+### Added
+- **OpenID Connect Discovery.** Set `conf.oidc.issuer` and the authorization,
+  token, userinfo, JWKS, revocation and end-session endpoints are read from the
+  provider's `/.well-known/openid-configuration` instead of being configured one
+  by one. Fetched once at startup and cached; every path that needs an endpoint
+  retries lazily, so a provider that is briefly unreachable at boot does not
+  wedge logins. A discovery document advertising a different `issuer` than the
+  one configured is refused (OIDC Discovery 1.0 §4.3) — otherwise it could point
+  us at someone else's endpoints.
+- **ID-token verification.** `verifyIdToken()` checks the signature against the
+  provider's JWKS (RS/PS/ES 256/384/512; `alg: none` and anything unlisted are
+  refused), then `iss`, `aud`, `exp` and `nbf` with a 60s clock tolerance. An
+  unknown `kid` refetches the key set immediately rather than waiting out the
+  cache, so a key rotation does not mean an hour of failed logins.
+- The callback route now verifies the ID token when the provider publishes a
+  JWKS, and **cross-checks its subject against userinfo** — the identity acted on
+  has to be the one that was signed for.
+
+### Changed
+- Endpoints are resolved through `endpoints()`: explicitly configured values
+  always win over discovered ones, so a deployment that lists them by hand is
+  unaffected.
+- `verifyIdTokenIfPossible()` returns `null` with a **one-time warning** when no
+  JWKS is available, preserving the previous userinfo-only behaviour for a
+  provider that publishes none. A provider that *does* publish one and fails
+  verification is an error, not a skip.
+
+### Why now
+
+This client shipped with a comment explaining that it did not verify ID-token
+signatures because "the SSO publishes no jwks_uri" — identity came from the
+userinfo endpoint alone, which is sound but establishes nothing about who
+asserted it. theta-directory v2.38.0 publishes a JWKS, so the constraint is
+gone. Existing deployments keep working untouched; adding `issuer` to their
+`conf.oidc` is what turns verification on.
+
 ## [1.0.0] — 2026-07-25
 
 Initial release. Extracts the byte-identical OIDC-client code previously
