@@ -1,6 +1,6 @@
 {
   "name": "@simpleworkjs/oidc-client",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Shared OpenID Connect authorization-code + PKCE client for the theta42 operational apps (proxy, jump-host). Factory that wires session models + the auth router onto an app's model-redis Table.",
   "main": "index.js",
   "scripts": {

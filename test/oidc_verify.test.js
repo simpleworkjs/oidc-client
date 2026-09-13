@@ -237,6 +237,65 @@ test('verifyIdTokenIfPossible verifies when the provider does publish one', asyn
 	} finally { await p.close(); }
 });
 
+test('an unreachable issuer does not break login -- it degrades with a warning', async () => {
+	// The upgrade hazard this exists to prevent. theta42's proxy points `issuer`
+	// at the public HTTPS host while reaching the SSO over an internal address
+	// for everything else, so discovery from inside the container can fail. If
+	// that were fatal, upgrading would break every login on a deployment that
+	// worked fine before.
+	const p = await startProvider();
+	const deadPort = p.base;          // capture, then close it out from under us
+	await p.close();
+
+	const original = { ...conf.oidc };
+	Object.assign(conf.oidc, {
+		issuer: deadPort,
+		authorizationEndpoint: undefined, tokenEndpoint: undefined,
+		userinfoEndpoint: undefined, jwksUri: undefined,
+	});
+	oidc._resetCaches();
+
+	const warnings = [];
+	const realWarn = console.warn;
+	console.warn = (...a) => warnings.push(a.join(' '));
+
+	try{
+		assert.equal(await oidc.verifyIdTokenIfPossible('a.b.c'), null, 'skips rather than throwing');
+		assert.equal(warnings.length, 1, 'says so once');
+		assert.match(warnings[0], /not verified/);
+
+		// Once, not once per login.
+		await oidc.verifyIdTokenIfPossible('a.b.c');
+		assert.equal(warnings.length, 1);
+	}finally{
+		console.warn = realWarn;
+		for(const k of Object.keys(conf.oidc)) delete conf.oidc[k];
+		Object.assign(conf.oidc, original);
+		oidc._resetCaches();
+	}
+});
+
+test('but a JWKS we know exists and then cannot use IS fatal', async () => {
+	// Different condition: discovery succeeded, so this provider is one we should
+	// be able to verify against. Failing open there would be the silent skip the
+	// whole change exists to avoid.
+	const p = await startProvider();
+	try{
+		await withProvider(p, async () => {
+			await oidc.discover();                 // jwksUri now known
+			assert.equal(oidc.canVerifyIdTokens(), true);
+			await p.close();                       // provider goes away before any
+			                                       // key was fetched
+			await assert.rejects(
+				() => oidc.verifyIdTokenIfPossible(signJwt(validClaims(p.base))),
+				/OidcJwks|fetch failed|ECONNREFUSED/
+			);
+		});
+	}finally{
+		await p.close().catch(() => {});
+	}
+});
+
 test('a malformed token is rejected without reaching the network', async () => {
 	await assert.rejects(() => oidc.verifyIdToken('not-a-jwt'), /OidcIdTokenMalformed/);
 	await assert.rejects(() => oidc.verifyIdToken('a.b.c'), /OidcIdTokenMalformed/);

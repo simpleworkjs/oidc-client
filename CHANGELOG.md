@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] — 2026-09-13
+
+### Fixed
+- **A discovery failure no longer breaks login.** In 1.1.0, a configured
+  `issuer` whose discovery document could not be read caused
+  `verifyIdTokenIfPossible()` to throw — so upgrading would break every login on
+  a deployment whose issuer is set but not reachable from where this code runs.
+  theta42's proxy is exactly that shape: `issuer` points at the public HTTPS
+  host, while `tokenEndpoint` and `userinfoEndpoint` deliberately use an internal
+  container address. Discovery from inside the container can fail, and 1.1.0
+  turned that into a total outage rather than the previous behaviour.
+
+  A discovery attempt that fails now means "we never established that this
+  provider can be verified against" — the same position as a provider with no
+  JWKS — so it warns once and falls back to userinfo-only identity. Set
+  `conf.oidc.jwksUri` explicitly to turn verification on where the issuer is not
+  reachable from the app.
+
+  **Unchanged:** once discovery HAS produced a JWKS, failing to use it is still
+  fatal. That is a provider we know we should be able to verify against, and
+  failing open there would be the silent skip this feature exists to avoid.
+
 ## [1.1.0] — 2026-09-13
 
 ### Added
